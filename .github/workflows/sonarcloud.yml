@@ -1,9 +1,6 @@
-name: SonarCloud Analysis
+name: SonarCloud PR Analysis
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -22,14 +19,39 @@ jobs:
           distribution: 'temurin'
           java-version: 17
 
-      - name: Verify Maven Installation
-        run: mvn -version  # ✅ Confirms Maven is installed correctly
-
-      - name: Build with Maven
-        run: mvn clean verify  # ✅ Ensures the project builds before SonarCloud analysis
-
-      - name: SonarCloud Scan
-        run: mvn clean verify sonar:sonar -Dsonar.host.url=https://sonarcloud.io -Dsonar.organization=savleenkaur04 -Dsonar.projectKey=SavleenKaur04_SonarDemo2
+      - name: Run SonarCloud Analysis
+        run: mvn clean verify sonar:sonar \
+             -Dsonar.host.url=https://sonarcloud.io \
+             -Dsonar.organization=savleenkaur04 \
+             -Dsonar.projectKey=SavleenKaur04_SonarDemo2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get SonarCloud Issues and Post Inline Comments
+        run: |
+          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+          REPO=$(jq --raw-output .repository.full_name "$GITHUB_EVENT_PATH")
+
+          SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&types=BUG,CODE_SMELL,VULNERABILITY&resolved=false"
+
+          echo "Fetching issues from SonarCloud API..."
+          ISSUES=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_API")
+
+          echo "Processing issues..."
+          echo "$ISSUES" | jq -c '.issues[]' | while read issue; do
+            MESSAGE=$(echo "$issue" | jq -r '.message')
+            FILE=$(echo "$issue" | jq -r '.component' | sed 's/.*://')
+            LINE=$(echo "$issue" | jq -r '.line')
+
+            PAYLOAD=$(jq -n --arg body "$MESSAGE" '{body: $body}')
+            
+            COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
+            
+            echo "Posting comment to PR: $COMMENT_URL"
+            curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD" \
+              "$COMMENT_URL"
+          done
+        env:
+          INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
