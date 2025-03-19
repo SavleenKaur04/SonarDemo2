@@ -23,23 +23,13 @@ jobs:
           java-version: 17
 
       - name: Verify Maven Installation
-        run: mvn -version
-
-      - name: Cache SonarCloud packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.sonar/cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
+        run: mvn -version  # ✅ Confirms Maven is installed correctly
 
       - name: Build with Maven
-        run: mvn clean verify
+        run: mvn clean verify  # ✅ Ensures the project builds before SonarCloud analysis
 
       - name: SonarCloud Scan
-        run: mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.9.1.2184:sonar \
-            -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.organization=savleenkaur04 \
-            -Dsonar.projectKey=SavleenKaur04_SonarDemo2
+        run: mvn clean verify sonar:sonar -Dsonar.host.url=https://sonarcloud.io -Dsonar.organization=savleenkaur04 -Dsonar.projectKey=SavleenKaur04_SonarDemo2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
