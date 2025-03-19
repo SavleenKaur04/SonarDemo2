@@ -51,10 +51,10 @@ jobs:
             COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
             
             echo "Posting comment to PR: $COMMENT_URL"
-            curl -s -X POST -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
+            curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD" \
               "$COMMENT_URL"
           done
         env:
-          GH_PAT: ${{ secrets.GH_PAT }}
+          INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
