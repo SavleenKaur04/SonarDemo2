@@ -8,8 +8,8 @@
     <version>1.0-SNAPSHOT</version>
 
     <properties>
-        <sonar.projectKey>your_project_key</sonar.projectKey>
-        <sonar.organization>your_organization</sonar.organization>
+        <sonar.projectKey>SavleenKaur04_SonarDemo2</sonar.projectKey>
+        <sonar.organization>SavleenKaur04</sonar.organization>
     </properties>
 
     <build>
