@@ -41,11 +41,11 @@ jobs:
 
           SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&types=BUG,CODE_SMELL,VULNERABILITY&resolved=false"
 
-          echo "Fetching issues from SonarCloud API..."
+          echo "🔍 Fetching issues from SonarCloud API..."
           ISSUES=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_API")
 
-          echo "All detected issues from SonarCloud:"
-          echo "$ISSUES" | jq '.issues[] | {rule: .rule, message: .message, file: .component, line: .line}'
+          echo "🔍 Raw SonarCloud API Response:"
+          echo "$ISSUES"
 
           echo "Processing issues..."
           echo "$ISSUES" | jq -c '.issues[]' | while read issue; do
@@ -54,12 +54,10 @@ jobs:
             FILE=$(echo "$issue" | jq -r '.component' | sed 's/.*://')
             LINE=$(echo "$issue" | jq -r '.line')
 
-            # Debugging output to confirm issue details
-            echo "Processing issue: Rule: $RULE | Message: $MESSAGE | File: $FILE | Line: $LINE"
+            echo "✅ Detected Issue - Rule: $RULE | Message: $MESSAGE | File: $FILE | Line: $LINE"
 
-            # If no line number is available, post a general PR comment
             if [ "$LINE" == "null" ] || [ -z "$LINE" ]; then
-              echo "No line number detected. Posting a general PR comment."
+              echo "⚠️ No line number detected. Posting general PR comment."
               PAYLOAD=$(jq -n --arg body "🔍 **SonarCloud Issue:** $MESSAGE\n\n**File:** \`$FILE\`" '{body: $body}')
               COMMENT_URL="https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
 
@@ -70,7 +68,6 @@ jobs:
               continue
             fi
 
-            # Post inline comment for issues with valid line numbers
             PAYLOAD=$(jq -n \
               --arg commit_id "$COMMIT_ID" \
               --arg path "$FILE" \
@@ -80,7 +77,7 @@ jobs:
 
             COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
 
-            echo "Posting inline comment to PR at $FILE:$LINE"
+            echo "🚀 Posting inline comment to PR at $FILE:$LINE"
             curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD" \
