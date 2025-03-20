@@ -4,8 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-permissions:  
-  pull-requests: write  # ✅ Ensures SonarCloud can post inline comments
+permissions:
+  pull-requests: write  # Ensure SonarCloud can post comments
 
 jobs:
   sonarcloud:
@@ -23,10 +23,10 @@ jobs:
           java-version: 17
 
       - name: Verify Maven Installation
-        run: mvn -version  # ✅ Ensures Maven is installed correctly
+        run: mvn -version
 
       - name: Build with Maven
-        run: mvn clean verify  # ✅ Ensures project builds before SonarCloud analysis
+        run: mvn clean verify
 
       - name: SonarCloud Scan
         run: mvn sonar:sonar -D"sonar.host.url=https://sonarcloud.io" -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2"
@@ -39,35 +39,48 @@ jobs:
           REPO=$(jq --raw-output .repository.full_name "$GITHUB_EVENT_PATH")
           COMMIT_ID=$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")
 
-          SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&types=BUG,CODE_SMELL,VULNERABILITY&resolved=false"
-
-          echo "🔍 Fetching issues from SonarCloud API..."
+          # Fetch all issues from SonarCloud
+          SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&types=BUG,CODE_SMELL,VULNERABILITY&resolved=false&p=1&ps=500"
+          echo "Fetching issues from SonarCloud API..."
           ISSUES=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_API")
 
-          echo "🔍 Raw SonarCloud API Response:"
+          # Debug: Verify API response
+          echo "Raw SonarCloud API Response:"
           echo "$ISSUES"
 
-          echo "Processing issues..."
+          # Parse issues and log detected count
+          ISSUE_COUNT=$(echo "$ISSUES" | jq '.issues | length')
+          echo "Total issues detected: $ISSUE_COUNT"
+
+          if [ "$ISSUE_COUNT" -eq 0 ]; then
+            echo "No issues found. Exiting."
+            exit 0
+          fi
+
+          # Process each issue and post comments
           echo "$ISSUES" | jq -c '.issues[]' | while read issue; do
             RULE=$(echo "$issue" | jq -r '.rule')
             MESSAGE=$(echo "$issue" | jq -r '.message')
             FILE=$(echo "$issue" | jq -r '.component' | sed 's/.*://')
             LINE=$(echo "$issue" | jq -r '.line')
 
-            echo "✅ Detected Issue - Rule: $RULE | Message: $MESSAGE | File: $FILE | Line: $LINE"
+            echo "Processing Issue: Rule=$RULE, Message=$MESSAGE, File=$FILE, Line=$LINE"
 
+            # Post general PR comment if line is missing
             if [ "$LINE" == "null" ] || [ -z "$LINE" ]; then
-              echo "⚠️ No line number detected. Posting general PR comment."
+              echo "No line number detected. Posting general PR comment."
               PAYLOAD=$(jq -n --arg body "🔍 **SonarCloud Issue:** $MESSAGE\n\n**File:** \`$FILE\`" '{body: $body}')
               COMMENT_URL="https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
 
-              curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
+              RESPONSE=$(curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
                 -H "Content-Type: application/json" \
                 -d "$PAYLOAD" \
-                "$COMMENT_URL"
+                "$COMMENT_URL")
+              echo "Response from GitHub API: $RESPONSE"
               continue
             fi
 
+            # Post inline comment for detected issues
             PAYLOAD=$(jq -n \
               --arg commit_id "$COMMIT_ID" \
               --arg path "$FILE" \
@@ -77,11 +90,11 @@ jobs:
 
             COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
 
-            echo "🚀 Posting inline comment to PR at $FILE:$LINE"
-            curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
+            RESPONSE=$(curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD" \
-              "$COMMENT_URL"
+              "$COMMENT_URL")
+            echo "Response from GitHub API: $RESPONSE"
           done
         env:
           INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
