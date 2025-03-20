@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:  
+  pull-requests: write  # ✅ Ensures SonarCloud can post inline comments
+
 jobs:
   sonarcloud:
     runs-on: ubuntu-latest
@@ -20,10 +23,10 @@ jobs:
           java-version: 17
 
       - name: Verify Maven Installation
-        run: mvn -version
+        run: mvn -version  # ✅ Ensures Maven is installed correctly
 
       - name: Build with Maven
-        run: mvn clean verify
+        run: mvn clean verify  # ✅ Ensures project builds before SonarCloud analysis
 
       - name: SonarCloud Scan
         run: mvn sonar:sonar -D"sonar.host.url=https://sonarcloud.io" -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2"
@@ -36,43 +39,38 @@ jobs:
           REPO=$(jq --raw-output .repository.full_name "$GITHUB_EVENT_PATH")
           COMMIT_ID=$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")
 
-          SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&types=BUG,CODE_SMELL,VULNERABILITY&resolved=false&p=1&ps=500"
+          SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&types=BUG,CODE_SMELL,VULNERABILITY&resolved=false"
 
           echo "Fetching issues from SonarCloud API..."
           ISSUES=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_API")
 
-          echo "All detected issues:"
+          echo "All detected issues from SonarCloud:"
           echo "$ISSUES" | jq '.issues[] | {rule: .rule, message: .message, file: .component, line: .line}'
 
-          ISSUE_COUNT=$(echo "$ISSUES" | jq '.issues | length')
-          echo "Total issues detected: $ISSUE_COUNT"
-
-          if [ "$ISSUE_COUNT" -eq 0 ]; then
-            echo "No issues found. Exiting."
-            exit 0
-          fi
-
+          echo "Processing issues..."
           echo "$ISSUES" | jq -c '.issues[]' | while read issue; do
             RULE=$(echo "$issue" | jq -r '.rule')
             MESSAGE=$(echo "$issue" | jq -r '.message')
             FILE=$(echo "$issue" | jq -r '.component' | sed 's/.*://')
             LINE=$(echo "$issue" | jq -r '.line')
 
+            # Debugging output to confirm issue details
             echo "Processing issue: Rule: $RULE | Message: $MESSAGE | File: $FILE | Line: $LINE"
 
+            # If no line number is available, post a general PR comment
             if [ "$LINE" == "null" ] || [ -z "$LINE" ]; then
               echo "No line number detected. Posting a general PR comment."
               PAYLOAD=$(jq -n --arg body "🔍 **SonarCloud Issue:** $MESSAGE\n\n**File:** \`$FILE\`" '{body: $body}')
               COMMENT_URL="https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
 
-              RESPONSE=$(curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
+              curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
                 -H "Content-Type: application/json" \
                 -d "$PAYLOAD" \
-                "$COMMENT_URL")
-              echo "General comment response: $RESPONSE"
+                "$COMMENT_URL"
               continue
             fi
 
+            # Post inline comment for issues with valid line numbers
             PAYLOAD=$(jq -n \
               --arg commit_id "$COMMIT_ID" \
               --arg path "$FILE" \
@@ -82,11 +80,11 @@ jobs:
 
             COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
 
-            RESPONSE=$(curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
+            echo "Posting inline comment to PR at $FILE:$LINE"
+            curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD" \
-              "$COMMENT_URL")
-            echo "Inline comment response: $RESPONSE"
+              "$COMMENT_URL"
           done
         env:
           INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
