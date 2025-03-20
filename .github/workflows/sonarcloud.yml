@@ -30,7 +30,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: Get SonarCloud Issues and Post Comments
+      - name: Fetch SonarCloud Issues and Post Comments
         run: |
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
           REPO=$(jq --raw-output .repository.full_name "$GITHUB_EVENT_PATH")
@@ -41,15 +41,22 @@ jobs:
           echo "Fetching issues from SonarCloud API..."
           ISSUES=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_API")
 
+          echo "All detected issues:"
+          echo "$ISSUES" | jq '.issues[] | {rule: .rule, message: .message, file: .component, line: .line}'
+
           echo "Processing issues..."
           echo "$ISSUES" | jq -c '.issues[]' | while read issue; do
             MESSAGE=$(echo "$issue" | jq -r '.message')
             FILE=$(echo "$issue" | jq -r '.component' | sed 's/.*://')
             LINE=$(echo "$issue" | jq -r '.line')
 
+            # Debugging output to confirm issue details
+            echo "Issue detected: $MESSAGE in $FILE at line $LINE"
+
             # If no line number, post a general PR comment
-            if [ "$LINE" == "null" ]; then
-              PAYLOAD=$(jq -n --arg body "🔍 SonarCloud found an issue: $MESSAGE in `$FILE`." '{body: $body}')
+            if [ "$LINE" == "null" ] || [ "$LINE" == "" ]; then
+              echo "No line number detected. Posting a general PR comment."
+              PAYLOAD=$(jq -n --arg body "🔍 **SonarCloud Issue:** $MESSAGE\n\n**File:** \`$FILE\`" '{body: $body}')
               COMMENT_URL="https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
 
               curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
@@ -69,6 +76,7 @@ jobs:
 
             COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
 
+            echo "Posting inline comment to PR: $COMMENT_URL"
             curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD" \
