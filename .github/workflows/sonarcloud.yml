@@ -29,9 +29,9 @@ jobs:
         run: mvn clean verify
 
       - name: SonarCloud Scan
-        run: mvn sonar:sonar -D"sonar.host.url=https://sonarcloud.io" -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2"
+        run: mvn sonar:sonar -D"sonar.host.url=https://sonarcloud.io" -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.pullrequest.branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" -D"sonar.pullrequest.base=main" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}"
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_TOKEN_VALUE: ${{ secrets.SONAR_TOKEN_VALUE }}
 
       - name: Fetch SonarCloud Issues and Post Comments
         run: |
@@ -42,7 +42,7 @@ jobs:
           # Fetch all issues from SonarCloud
           SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&types=BUG,CODE_SMELL,VULNERABILITY&statuses=OPEN,CONFIRMED&severities=INFO,MINOR,MAJOR,CRITICAL,BLOCKER&p=1&ps=500"
           echo "Fetching issues from SonarCloud API..."
-          ISSUES=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_API")
+          ISSUES=$(curl -s -u "${{ secrets.SONAR_TOKEN_VALUE }}:" "$SONAR_API")
 
           # Debugging API response
           echo "Raw SonarCloud API Response:"
