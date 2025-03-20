@@ -47,18 +47,15 @@ jobs:
             FILE=$(echo "$issue" | jq -r '.component' | sed 's/.*://')
             LINE=$(echo "$issue" | jq -r '.line')
 
-            # Ensure line number is valid
+            # If no line number, post a general PR comment
             if [ "$LINE" == "null" ]; then
-              echo "No line number detected. Posting a general PR comment."
               PAYLOAD=$(jq -n --arg body "🔍 SonarCloud found an issue: $MESSAGE in `$FILE`." '{body: $body}')
-
               COMMENT_URL="https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
 
               curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
                 -H "Content-Type: application/json" \
                 -d "$PAYLOAD" \
                 "$COMMENT_URL"
-
               continue
             fi
 
@@ -72,7 +69,6 @@ jobs:
 
             COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
 
-            echo "Posting inline comment to PR: $COMMENT_URL"
             curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD" \
