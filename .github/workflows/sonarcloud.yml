@@ -20,13 +20,16 @@ jobs:
           java-version: 17
 
       - name: Verify Maven Installation
-        run: mvn -version  # ✅ Confirms Maven is installed correctly
+        run: mvn -version  # ✅ Ensures Maven is installed correctly
 
       - name: Build with Maven
-        run: mvn clean verify  # ✅ Ensures the project builds before SonarCloud analysis
+        run: mvn clean verify  # ✅ Ensures project builds before running SonarCloud analysis
 
       - name: SonarCloud Scan
-        run: mvn sonar:sonar -Dsonar.host.url="https://sonarcloud.io" -Dsonar.organization="savleenkaur04" -Dsonar.projectKey="SavleenKaur04_SonarDemo2"
+        run: mvn sonar:sonar \
+          -Dsonar.host.url="https://sonarcloud.io" \
+          -Dsonar.organization="savleenkaur04" \
+          -Dsonar.projectKey="SavleenKaur04_SonarDemo2"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -34,6 +37,7 @@ jobs:
         run: |
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
           REPO=$(jq --raw-output .repository.full_name "$GITHUB_EVENT_PATH")
+          COMMIT_ID=$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")
 
           SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&types=BUG,CODE_SMELL,VULNERABILITY&resolved=false"
 
@@ -46,10 +50,21 @@ jobs:
             FILE=$(echo "$issue" | jq -r '.component' | sed 's/.*://')
             LINE=$(echo "$issue" | jq -r '.line')
 
-            PAYLOAD=$(jq -n --arg body "$MESSAGE" '{body: $body}')
-            
+            # Ensure line number is valid
+            if [ "$LINE" == "null" ]; then
+              echo "Skipping issue with no line number."
+              continue
+            fi
+
+            PAYLOAD=$(jq -n \
+              --arg commit_id "$COMMIT_ID" \
+              --arg path "$FILE" \
+              --argjson line "$LINE" \
+              --arg body "$MESSAGE" \
+              '{commit_id: $commit_id, path: $path, line: $line, body: $body}')
+
             COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
-            
+
             echo "Posting comment to PR: $COMMENT_URL"
             curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
               -H "Content-Type: application/json" \
