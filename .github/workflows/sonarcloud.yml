@@ -30,7 +30,7 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: Get SonarCloud Issues and Post Inline Comments
+      - name: Get SonarCloud Issues and Post Comments
         run: |
           PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
           REPO=$(jq --raw-output .repository.full_name "$GITHUB_EVENT_PATH")
@@ -49,20 +49,30 @@ jobs:
 
             # Ensure line number is valid
             if [ "$LINE" == "null" ]; then
-              echo "Skipping issue with no line number."
+              echo "No line number detected. Posting a general PR comment."
+              PAYLOAD=$(jq -n --arg body "🔍 SonarCloud found an issue: $MESSAGE in `$FILE`." '{body: $body}')
+
+              COMMENT_URL="https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
+
+              curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
+                -H "Content-Type: application/json" \
+                -d "$PAYLOAD" \
+                "$COMMENT_URL"
+
               continue
             fi
 
+            # Post inline comment for issues with valid line numbers
             PAYLOAD=$(jq -n \
               --arg commit_id "$COMMIT_ID" \
               --arg path "$FILE" \
               --argjson line "$LINE" \
-              --arg body "$MESSAGE" \
+              --arg body "🔍 $MESSAGE" \
               '{commit_id: $commit_id, path: $path, line: $line, body: $body}')
 
             COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
 
-            echo "Posting comment to PR: $COMMENT_URL"
+            echo "Posting inline comment to PR: $COMMENT_URL"
             curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD" \
