@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  pull-requests: write  # Ensure SonarCloud can post comments
+  pull-requests: write  # Ensures permissions to post comments on PRs
 
 jobs:
   sonarcloud:
@@ -40,24 +40,25 @@ jobs:
           COMMIT_ID=$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")
 
           # Fetch all issues from SonarCloud
-          SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&types=BUG,CODE_SMELL,VULNERABILITY&resolved=false&p=1&ps=500"
+          SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&types=BUG,CODE_SMELL,VULNERABILITY&statuses=OPEN,CONFIRMED&severities=INFO,MINOR,MAJOR,CRITICAL,BLOCKER&p=1&ps=500"
           echo "Fetching issues from SonarCloud API..."
           ISSUES=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_API")
 
-          # Debug: Verify API response
+          # Debugging API response
           echo "Raw SonarCloud API Response:"
-          echo "$ISSUES"
+          echo "$ISSUES" | jq '.'
 
-          # Parse issues and log detected count
+          # Verify the number of issues returned
           ISSUE_COUNT=$(echo "$ISSUES" | jq '.issues | length')
           echo "Total issues detected: $ISSUE_COUNT"
 
+          # Exit if no issues are found
           if [ "$ISSUE_COUNT" -eq 0 ]; then
             echo "No issues found. Exiting."
             exit 0
           fi
 
-          # Process each issue and post comments
+          # Process each issue and post a comment
           echo "$ISSUES" | jq -c '.issues[]' | while read issue; do
             RULE=$(echo "$issue" | jq -r '.rule')
             MESSAGE=$(echo "$issue" | jq -r '.message')
@@ -66,7 +67,7 @@ jobs:
 
             echo "Processing Issue: Rule=$RULE, Message=$MESSAGE, File=$FILE, Line=$LINE"
 
-            # Post general PR comment if line is missing
+            # Post general comment if no line number is detected
             if [ "$LINE" == "null" ] || [ -z "$LINE" ]; then
               echo "No line number detected. Posting general PR comment."
               PAYLOAD=$(jq -n --arg body "🔍 **SonarCloud Issue:** $MESSAGE\n\n**File:** \`$FILE\`" '{body: $body}')
@@ -76,11 +77,11 @@ jobs:
                 -H "Content-Type: application/json" \
                 -d "$PAYLOAD" \
                 "$COMMENT_URL")
-              echo "Response from GitHub API: $RESPONSE"
+              echo "General comment response: $RESPONSE"
               continue
             fi
 
-            # Post inline comment for detected issues
+            # Post inline comment for issues with line numbers
             PAYLOAD=$(jq -n \
               --arg commit_id "$COMMIT_ID" \
               --arg path "$FILE" \
@@ -94,7 +95,7 @@ jobs:
               -H "Content-Type: application/json" \
               -d "$PAYLOAD" \
               "$COMMENT_URL")
-            echo "Response from GitHub API: $RESPONSE"
+            echo "Inline comment response: $RESPONSE"
           done
         env:
           INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
