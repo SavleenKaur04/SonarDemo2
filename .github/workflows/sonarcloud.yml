@@ -1,6 +1,7 @@
 name: SonarCloud PR Analysis & AI PR Reviewer
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - main  # Analyze PRs targeting main
