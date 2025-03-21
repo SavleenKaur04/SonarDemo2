@@ -18,7 +18,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-           fetch-depth: 0
+           fetch-depth: 0  # Ensures full history is available for SonarCloud
 
       - name: Set up JDK
         uses: actions/setup-java@v3
@@ -35,7 +35,14 @@ jobs:
 
       - name: Run SonarCloud Analysis
         run: |
-          mvn sonar:sonar -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}"
+          mvn sonar:sonar \
+            -D"sonar.organization=savleenkaur04" \
+            -D"sonar.projectKey=SavleenKaur04_SonarDemo2" \
+            -D"sonar.host.url=https://sonarcloud.io" \
+            -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" \
+            -D"sonar.pullrequest.branch=${{ github.head_ref }}" \
+            -D"sonar.pullrequest.base=${{ github.base_ref }}" \
+            -D"sonar.qualitygate.wait=true"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -48,11 +55,11 @@ jobs:
       - name: Fetch SonarCloud Issues
         id: fetch_issues
         run: |
-          PR_KEY=${{ github.event.pull_request.number }}
           PROJECT_KEY=SavleenKaur04_SonarDemo2
           SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}"
 
-          API_URL="https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT_KEY}&pullRequest=${PR_KEY}"
+          # Fetch issues from MAIN branch since SonarCloud only analyzes main
+          API_URL="https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT_KEY}&branch=main"
 
           RESPONSE=$(curl -s -u ${SONAR_TOKEN}: "${API_URL}")
           echo "SonarCloud API Response: $RESPONSE"  # Debugging
@@ -61,7 +68,7 @@ jobs:
 
       - name: Post SonarCloud Issues as PR Comments
         env:
-          INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
+          INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}  
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           REPO=${{ github.repository }}
@@ -75,8 +82,8 @@ jobs:
             MESSAGE=$(echo $COMMENT | cut -d' ' -f3- | cut -d'=' -f2-)
 
             if [[ -n "$LINE" ]]; then
-              gh pr review $PR_NUMBER --repo $REPO --comment --body "$MESSAGE" --path "$FILE" --line "$LINE"
+              GH_TOKEN=$INLINE_COMMENT gh pr review $PR_NUMBER --repo $REPO --comment --body "$MESSAGE" --path "$FILE" --line "$LINE"
             else
-              gh pr review $PR_NUMBER --repo $REPO --comment --body "$MESSAGE"
+              GH_TOKEN=$INLINE_COMMENT gh pr review $PR_NUMBER --repo $REPO --comment --body "$MESSAGE"
             fi
           done
