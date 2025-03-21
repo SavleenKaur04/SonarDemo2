@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # ✅ Ensures full Git history for SonarCloud
 
       - name: Set up JDK
         uses: actions/setup-java@v3
@@ -34,7 +36,7 @@ jobs:
       - name: Run SonarCloud Analysis
         run: |
           mvn sonar:sonar \
-            -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}"
+            -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}" -D"sonar.qualitygate.wait=true"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -47,53 +49,70 @@ jobs:
       - name: Fetch SonarCloud Issues
         id: fetch_issues
         run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
+          PR_KEY=${{ github.event.pull_request.number }}
           PROJECT_KEY=SavleenKaur04_SonarDemo2
           SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}"
 
-          API_URL="https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT_KEY}&pullRequest=${PR_NUMBER}"
+          API_URL="https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT_KEY}&pullRequest=${PR_KEY}"
+
+          echo "Fetching SonarCloud issues from: $API_URL"
 
           RESPONSE=$(curl -s -u ${SONAR_TOKEN}: "${API_URL}")
-          echo "SonarCloud API Response: $RESPONSE"  # Debugging
 
-          echo "${RESPONSE}" > sonar_issues.json
+          echo "Raw API Response: $RESPONSE"  # ✅ Debug API response
 
-      - name: Post Inline Comments on PR
+          # ✅ Check if API response is empty or invalid
+          if [ -z "$RESPONSE" ]; then
+            echo "❌ API response is empty! Exiting."
+            exit 1
+          fi
+
+          if echo "$RESPONSE" | jq empty 2>/dev/null; then
+            echo "$RESPONSE" > sonar_issues.json
+          else
+            echo "❌ API response is NOT valid JSON! Exiting."
+            exit 1
+          fi
+
+      - name: Post SonarCloud Issues as PR Comments
         env:
-          GITHUB_TOKEN: ${{ secrets.INLINE_COMMENT }}
+          INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           REPO=${{ github.repository }}
-          COMMIT_ID=$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")
           SONAR_ISSUES_FILE="sonar_issues.json"
 
-          echo "Processing SonarCloud Issues for PR #$PR_NUMBER"
+          echo "🔍 Checking SonarCloud issues..."
+          cat $SONAR_ISSUES_FILE  # ✅ Print the file to debug
+
+          # ✅ Check if issues file is empty
+          if [ ! -s "$SONAR_ISSUES_FILE" ]; then
+            echo "❌ No issues found. Exiting."
+            exit 0
+          fi
 
           ISSUES=$(jq -c '.issues[]' ${SONAR_ISSUES_FILE})
 
-          for ISSUE in $ISSUES; do
-            FILE=$(echo "$ISSUE" | jq -r '.component' | sed 's/.*://')
-            LINE=$(echo "$ISSUE" | jq -r '.line')
-            MESSAGE=$(echo "$ISSUE" | jq -r '.message')
+          for COMMENT in $ISSUES; do
+            FILE=$(echo "$COMMENT" | jq -r '.component' | sed 's/.*://')
+            LINE=$(echo "$COMMENT" | jq -r '.line')
+            MESSAGE=$(echo "$COMMENT" | jq -r '.message')
 
-            echo "Processing Issue: File=$FILE, Line=$LINE, Message=$MESSAGE"
+            echo "✅ Extracted Issue: File=$FILE, Line=$LINE, Message=$MESSAGE"
 
-            if [ "$LINE" == "null" ] || [ -z "$LINE" ]; then
-              echo "No line number detected. Posting general PR comment."
-              PAYLOAD=$(jq -n --arg body "🔍 **SonarCloud Issue:** $MESSAGE\n\n**File:** \`$FILE\`" '{body: $body}')
-              COMMENT_URL="https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
-
-              curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
-                -H "Content-Type: application/json" \
-                -d "$PAYLOAD" \
-                "$COMMENT_URL"
+            if [[ "$FILE" == "null" || -z "$FILE" ]]; then
+              echo "❌ Skipping issue because FILE is missing"
+              continue
+            fi
+            if [[ "$LINE" == "null" || -z "$LINE" ]]; then
+              echo "❌ Skipping inline comment because LINE is missing"
               continue
             fi
 
-            echo "Posting inline comment for $FILE at line $LINE"
+            echo "📌 Posting inline comment for $FILE at line $LINE..."
 
             PAYLOAD=$(jq -n \
-              --arg commit_id "$COMMIT_ID" \
+              --arg commit_id "$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")" \
               --arg path "$FILE" \
               --argjson line "$LINE" \
               --arg body "🔍 **SonarCloud Issue:** $MESSAGE" \
@@ -101,8 +120,12 @@ jobs:
 
             COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
 
-            curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $INLINE_COMMENT" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD" \
-              "$COMMENT_URL"
+              "$COMMENT_URL")
+
+            echo "🔍 GitHub API Response Code: $RESPONSE"
+            echo "🔍 GitHub API Response Body:"
+            cat response.json  # ✅ Print GitHub API response for debugging
           done
