@@ -76,6 +76,9 @@ jobs:
       - name: Install Dependencies
         run: pip install requests
 
+      - name: Set env
+        run: echo "GITHUB_SHA=$(git show --pretty=format:"%H" --no-patch)" >> $GITHUB_ENV
+
       - name: Post SonarCloud Issues as PR Comments (Python)
         env:
           GITHUB_TOKEN: ${{ secrets.INLINE_COMMENT }}
