@@ -44,6 +44,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Install yq
+        run: |
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+
       - name: Fetch SonarCloud Issues
         id: fetch_issues
         run: |
@@ -54,79 +59,66 @@ jobs:
 
           echo "Fetching SonarCloud issues from: $API_URL"
 
-          # Fetch issues and validate response
-          RESPONSE=$(curl -s -u ${SONAR_TOKEN}: "${API_URL}")
-          echo "$RESPONSE" > sonar_issues.json
+          # ✅ Save API response correctly
+          curl -s -u ${SONAR_TOKEN}: "${API_URL}" -o sonar_issues.json
 
-          # Check if JSON is empty or invalid
-          if [ ! -s sonar_issues.json ] || ! jq empty sonar_issues.json 2>/dev/null; then
-            echo "❌ No valid issues found. Exiting."
+          # ✅ Ensure JSON file is not empty
+          if [ ! -s sonar_issues.json ]; then
+            echo "❌ No issues found. Exiting."
             exit 0
           fi
 
-          echo "✅ Successfully fetched SonarCloud issues."
+          echo "✅ SonarCloud issues saved successfully."
 
-      - name: Post SonarCloud Issues as PR Comments
+      - name: Post SonarCloud Issues as PR Comments (Using yq)
         env:
           INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           REPO=${{ github.repository }}
-          SONAR_ISSUES_FILE="sonar_issues.json"
 
-          echo "🔍 Checking SonarCloud issues..."
-          cat $SONAR_ISSUES_FILE  # ✅ Print file contents to confirm it's correct
-
-          # ✅ Ensure file is valid before processing
-          if [ ! -s "$SONAR_ISSUES_FILE" ]; then
+          if [ ! -s sonar_issues.json ]; then
             echo "❌ No issues found. Exiting."
             exit 0
           fi
 
-          if ! jq empty "$SONAR_ISSUES_FILE" 2>/dev/null; then
-            echo "❌ JSON parsing failed. Exiting."
-            exit 1
+          echo "🔍 Checking SonarCloud issues..."
+          cat sonar_issues.json  # ✅ Debug JSON contents
+
+          # ✅ Check if JSON contains issues before processing
+          ISSUE_COUNT=$(yq e '.issues | length' sonar_issues.json)
+          if [[ "$ISSUE_COUNT" -eq 0 ]]; then
+            echo "✅ No SonarCloud issues found."
+            exit 0
           fi
 
-          # ✅ Extract and process issues
-          ISSUES=$(jq -c '.issues[] // empty' "$SONAR_ISSUES_FILE" || echo "[]")
+          # ✅ Loop through issues correctly
+          yq e '.issues[] | @json' sonar_issues.json | while read -r issue; do
+            FILE=$(echo "$issue" | yq e '.component' - | sed 's/.*://')
+            LINE=$(echo "$issue" | yq e '.line // 0' -)  # Default to 0 if null
+            MESSAGE=$(echo "$issue" | yq e '.message' -)
 
-          for ISSUE in $ISSUES; do
-            FILE=$(echo "$ISSUE" | jq -r '.component' | sed 's/.*://')
-            LINE=$(echo "$ISSUE" | jq -r '.line')
-            MESSAGE=$(echo "$ISSUE" | jq -r '.message')
-
-            echo "✅ Extracted Issue: File=$FILE, Line=$LINE, Message=$MESSAGE"
-
-            if [[ "$FILE" == "null" || -z "$FILE" ]]; then
-              echo "❌ Skipping issue because FILE is missing"
+            if [[ -z "$FILE" || "$FILE" == "null" ]]; then
+              echo "❌ Skipping issue due to missing file"
               continue
             fi
-            if [[ "$LINE" == "null" || -z "$LINE" ]]; then
-              echo "❌ Skipping inline comment because LINE is missing"
+
+            if [[ "$LINE" -eq 0 || "$LINE" == "null" ]]; then
+              echo "❌ Skipping inline comment due to missing line number"
               continue
             fi
 
             echo "📌 Posting inline comment for $FILE at line $LINE..."
 
-            # ✅ Correct commit SHA
-            COMMIT_ID=${{ github.event.pull_request.head.sha }}
-
             PAYLOAD=$(jq -n \
-              --arg commit_id "$COMMIT_ID" \
-              --arg path "$FILE" \
-              --argjson line "$LINE" \
               --arg body "🔍 **SonarCloud Issue:** $MESSAGE" \
-              '{commit_id: $commit_id, path: $path, line: $line, body: $body}')
+              '{body: $body}')
 
             COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
 
-            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $INLINE_COMMENT" \
-              -H "Content-Type: application/json" \
-              -d "$PAYLOAD" \
-              "$COMMENT_URL")
+            curl -s -o response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $INLINE_COMMENT" \
+              -H "Content-Type: application/json" -d "$PAYLOAD" "$COMMENT_URL"
 
-            echo "🔍 GitHub API Response Code: $RESPONSE"
-            echo "🔍 GitHub API Response Body:"
-            cat response.json  # ✅ Print GitHub API response for debugging
+            echo "🔍 GitHub API Response:"
+            cat response.json
           done
