@@ -34,9 +34,7 @@ jobs:
           restore-keys: maven-
 
       - name: Run SonarCloud Analysis
-        run: |
-          mvn sonar:sonar \
-            -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}" -D"sonar.qualitygate.wait||true"
+        run: mvn sonar:sonar -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}" -D"sonar.qualitygate.wait=true"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -52,25 +50,28 @@ jobs:
           PR_KEY=${{ github.event.pull_request.number }}
           PROJECT_KEY=SavleenKaur04_SonarDemo2
           SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}"
-
           API_URL="https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT_KEY}&pullRequest=${PR_KEY}"
 
           echo "Fetching SonarCloud issues from: $API_URL"
 
-          RESPONSE=$(curl -s -u ${SONAR_TOKEN}: "${API_URL}")
+          # ✅ Use tee to correctly save response
+          curl -s -u ${SONAR_TOKEN}: "${API_URL}" | tee sonar_issues.json
 
-          echo "Raw API Response: $RESPONSE"  # ✅ Debug API response
+          # ✅ Debug: Print JSON file size
+          echo "File Size: $(stat -c%s sonar_issues.json) bytes"
 
-          # ✅ Check if API response is empty or invalid
-          if [ -z "$RESPONSE" ]; then
-            echo "❌ API response is empty! Exiting."
+          # ✅ Ensure JSON is properly written before processing
+          if [ ! -s sonar_issues.json ]; then
+            echo "❌ The sonar_issues.json file is empty! Exiting."
             exit 1
           fi
 
-          if echo "$RESPONSE" | jq empty 2>/dev/null; then
-            echo "$RESPONSE" > sonar_issues.json
-          else
-            echo "❌ API response is NOT valid JSON! Exiting."
+          # ✅ Print first few lines to check for formatting errors
+          head -n 10 sonar_issues.json
+
+          # ✅ Validate JSON file before parsing
+          if ! jq empty sonar_issues.json 2>/dev/null; then
+            echo "❌ The file sonar_issues.json contains invalid JSON! Exiting."
             exit 1
           fi
 
@@ -83,20 +84,26 @@ jobs:
           SONAR_ISSUES_FILE="sonar_issues.json"
 
           echo "🔍 Checking SonarCloud issues..."
-          cat $SONAR_ISSUES_FILE  # ✅ Print the file to debug
+          cat $SONAR_ISSUES_FILE  # ✅ Print file contents to confirm it's correct
 
-          # ✅ Check if issues file is empty
+          # ✅ Ensure file is valid before processing
           if [ ! -s "$SONAR_ISSUES_FILE" ]; then
             echo "❌ No issues found. Exiting."
             exit 0
           fi
 
-          ISSUES=$(jq -c '.issues[]' ${SONAR_ISSUES_FILE})
+          if ! jq empty "$SONAR_ISSUES_FILE" 2>/dev/null; then
+            echo "❌ JSON parsing failed. Exiting."
+            exit 1
+          fi
 
-          for COMMENT in $ISSUES; do
-            FILE=$(echo "$COMMENT" | jq -r '.component' | sed 's/.*://')
-            LINE=$(echo "$COMMENT" | jq -r '.line')
-            MESSAGE=$(echo "$COMMENT" | jq -r '.message')
+          # ✅ Handle empty or invalid JSON gracefully
+          ISSUES=$(jq -c '.issues[] // empty' "$SONAR_ISSUES_FILE" || echo "[]")
+
+          for ISSUE in $ISSUES; do
+            FILE=$(echo "$ISSUE" | jq -r '.component' | sed 's/.*://')
+            LINE=$(echo "$ISSUE" | jq -r '.line')
+            MESSAGE=$(echo "$ISSUE" | jq -r '.message')
 
             echo "✅ Extracted Issue: File=$FILE, Line=$LINE, Message=$MESSAGE"
 
