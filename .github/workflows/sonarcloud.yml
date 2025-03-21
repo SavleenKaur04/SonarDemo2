@@ -54,18 +54,28 @@ jobs:
 
           echo "Fetching SonarCloud issues from: $API_URL"
 
-          # ✅ Fetch and store JSON response
-          RESPONSE=$(curl -s -u "${SONAR_TOKEN}:" "${API_URL}")
-          echo "$RESPONSE" > sonar_issues.json
+          # ✅ Fetch response and store in file
+          curl -s -u "${SONAR_TOKEN}:" "${API_URL}" | tee sonar_issues.json
 
-          # ✅ Validate JSON before processing
+          # ✅ Print JSON file size
+          echo "File Size: $(stat -c%s sonar_issues.json) bytes"
+
+          # ✅ Ensure JSON is properly written before processing
           if [ ! -s sonar_issues.json ]; then
             echo "❌ The sonar_issues.json file is empty! Exiting."
             exit 1
           fi
 
+          # ✅ Remove hidden characters that might break jq
+          tr -cd '\11\12\15\40-\176' < sonar_issues.json > cleaned_sonar_issues.json
+          mv cleaned_sonar_issues.json sonar_issues.json
+
+          # ✅ Print first few lines to check for formatting errors
+          head -n 10 sonar_issues.json
+
+          # ✅ Validate JSON file before parsing
           if ! jq empty sonar_issues.json 2>/dev/null; then
-            echo "❌ Invalid JSON! Exiting."
+            echo "❌ The file sonar_issues.json contains invalid JSON! Exiting."
             exit 1
           fi
 
@@ -78,16 +88,20 @@ jobs:
           SONAR_ISSUES_FILE="sonar_issues.json"
 
           echo "🔍 Checking SonarCloud issues..."
-          cat $SONAR_ISSUES_FILE  # ✅ Debugging JSON output
+          cat $SONAR_ISSUES_FILE  # ✅ Print file contents for debugging
 
-          # ✅ Check if the JSON is empty or has no issues
-          TOTAL_ISSUES=$(jq '.total' "$SONAR_ISSUES_FILE")
-          if [[ "$TOTAL_ISSUES" -eq 0 ]]; then
-            echo "✅ No issues detected by SonarCloud. Exiting."
+          # ✅ Ensure file is valid before processing
+          if [ ! -s "$SONAR_ISSUES_FILE" ]; then
+            echo "❌ No issues found. Exiting."
             exit 0
           fi
 
-          # ✅ Extract valid issues only
+          if ! jq empty "$SONAR_ISSUES_FILE" 2>/dev/null; then
+            echo "❌ JSON parsing failed. Exiting."
+            exit 1
+          fi
+
+          # ✅ Handle empty or invalid JSON gracefully
           ISSUES=$(jq -c '.issues[] | select(.line != null and .component != null)' "$SONAR_ISSUES_FILE" || echo "[]")
 
           for ISSUE in $ISSUES; do
@@ -118,7 +132,7 @@ jobs:
 
             echo "🔍 GitHub API Response Code: $RESPONSE"
             echo "🔍 GitHub API Response Body:"
-            cat response.json  # ✅ Debug GitHub API response
+            cat response.json  # ✅ Print GitHub API response for debugging
           done
 
           echo "✅ Script completed successfully."
