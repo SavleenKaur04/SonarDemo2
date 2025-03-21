@@ -33,12 +33,13 @@ jobs:
 
       - name: Run SonarCloud Analysis
         run: |
-          mvn sonar:sonar -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}"
+          mvn sonar:sonar \
+            -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   fetch-sonar-issues:
-    name: Fetch SonarCloud Issues & Comment on PR
+    name: Fetch SonarCloud Issues & Post Inline Comments
     needs: sonarcloud
     runs-on: ubuntu-latest
 
@@ -46,35 +47,62 @@ jobs:
       - name: Fetch SonarCloud Issues
         id: fetch_issues
         run: |
-          PR_KEY=${{ github.event.pull_request.number }}
+          PR_NUMBER=${{ github.event.pull_request.number }}
           PROJECT_KEY=SavleenKaur04_SonarDemo2
           SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}"
 
-          API_URL="https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT_KEY}&pullRequest=${PR_KEY}"
+          API_URL="https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT_KEY}&pullRequest=${PR_NUMBER}"
 
           RESPONSE=$(curl -s -u ${SONAR_TOKEN}: "${API_URL}")
           echo "SonarCloud API Response: $RESPONSE"  # Debugging
 
           echo "${RESPONSE}" > sonar_issues.json
 
-      - name: Post SonarCloud Issues as PR Comments
+      - name: Post Inline Comments on PR
         env:
-          INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
+          GITHUB_TOKEN: ${{ secrets.INLINE_COMMENT }}
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           REPO=${{ github.repository }}
+          COMMIT_ID=$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")
           SONAR_ISSUES_FILE="sonar_issues.json"
 
-          COMMENTS=$(jq -r '.issues[] | "file=\(.component) line=\(.line) message=\(.message)"' ${SONAR_ISSUES_FILE})
+          echo "Processing SonarCloud Issues for PR #$PR_NUMBER"
 
-          for COMMENT in $COMMENTS; do
-            FILE=$(echo $COMMENT | cut -d' ' -f1 | cut -d'=' -f2)
-            LINE=$(echo $COMMENT | cut -d' ' -f2 | cut -d'=' -f2)
-            MESSAGE=$(echo $COMMENT | cut -d' ' -f3- | cut -d'=' -f2-)
+          ISSUES=$(jq -c '.issues[]' ${SONAR_ISSUES_FILE})
 
-            if [[ -n "$LINE" ]]; then
-              gh pr review $PR_NUMBER --repo $REPO --comment --body "$MESSAGE" --path "$FILE" --line "$LINE"
-            else
-              gh pr review $PR_NUMBER --repo $REPO --comment --body "$MESSAGE"
+          for ISSUE in $ISSUES; do
+            FILE=$(echo "$ISSUE" | jq -r '.component' | sed 's/.*://')
+            LINE=$(echo "$ISSUE" | jq -r '.line')
+            MESSAGE=$(echo "$ISSUE" | jq -r '.message')
+
+            echo "Processing Issue: File=$FILE, Line=$LINE, Message=$MESSAGE"
+
+            if [ "$LINE" == "null" ] || [ -z "$LINE" ]; then
+              echo "No line number detected. Posting general PR comment."
+              PAYLOAD=$(jq -n --arg body "🔍 **SonarCloud Issue:** $MESSAGE\n\n**File:** \`$FILE\`" '{body: $body}')
+              COMMENT_URL="https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
+
+              curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$PAYLOAD" \
+                "$COMMENT_URL"
+              continue
             fi
+
+            echo "Posting inline comment for $FILE at line $LINE"
+
+            PAYLOAD=$(jq -n \
+              --arg commit_id "$COMMIT_ID" \
+              --arg path "$FILE" \
+              --argjson line "$LINE" \
+              --arg body "🔍 **SonarCloud Issue:** $MESSAGE" \
+              '{commit_id: $commit_id, path: $path, line: $line, body: $body}')
+
+            COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
+
+            curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD" \
+              "$COMMENT_URL"
           done
