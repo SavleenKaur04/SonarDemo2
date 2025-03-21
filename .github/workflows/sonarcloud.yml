@@ -76,10 +76,15 @@ jobs:
       - name: Install Dependencies
         run: pip install requests
 
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
+
       - name: Post SonarCloud Issues as PR Comments (Python)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.INLINE_COMMENT }}
           GITHUB_REPO: ${{ github.repository }}
+          PR_HASH: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
         run: python post_comments.py
