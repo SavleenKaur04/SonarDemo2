@@ -12,6 +12,12 @@ REPO = os.getenv("GITHUB_REPO")  # Format: "owner/repo"
 PR_NUMBER = os.getenv("PR_NUMBER")  # PR number
 PR_COMMIT_SHA = os.getenv("PR_COMMIT_SHA")  # Commit SHA for commenting
 
+print("config:")
+print(GITHUB_TOKEN)
+print(REPO)
+print(PR_NUMBER)
+print(PR_COMMIT_SHA)
+
 headers = {
     "Authorization": f"token {GITHUB_TOKEN}",
     "Accept": "application/vnd.github.v3+json"
@@ -53,4 +59,4 @@ for issue in data["issues"]:
     if response.status_code == 201:
         print(f"✅ Comment posted on {file_path}:{line}")
     else:
-        print(f"❌ Failed to post comment: {response.text}")
+        raise Exception(response);
