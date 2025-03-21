@@ -5,6 +5,10 @@ on:
     branches:
       - main  # Analyze PRs targeting main
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   sonarcloud:
     name: Run SonarCloud Analysis
@@ -31,7 +35,7 @@ jobs:
         run: |
           mvn sonar:sonar -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}"
         env:
-          SONAR_TOKEN_VALUE: ${{ secrets.SONAR_TOKEN_VALUE }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   fetch-sonar-issues:
     name: Fetch SonarCloud Issues & Comment on PR
@@ -44,11 +48,11 @@ jobs:
         run: |
           PR_KEY=${{ github.event.pull_request.number }}
           PROJECT_KEY=SavleenKaur04_SonarDemo2
-          SONAR_TOKEN_VALUE="${{ secrets.SONAR_TOKEN_VALUE }}"
+          SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}"
 
           API_URL="https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT_KEY}&pullRequest=${PR_KEY}"
 
-          RESPONSE=$(curl -s -u ${SONAR_TOKEN_VALUE}: "${API_URL}")
+          RESPONSE=$(curl -s -u ${SONAR_TOKEN}: "${API_URL}")
           echo "SonarCloud API Response: $RESPONSE"  # Debugging
 
           echo "${RESPONSE}" > sonar_issues.json
