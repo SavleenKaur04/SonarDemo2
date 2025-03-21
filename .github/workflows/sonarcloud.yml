@@ -3,7 +3,7 @@ name: SonarCloud PR Analysis
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-
+ 
 permissions:
   pull-requests: write  # Ensures permissions to post comments on PRs
 
