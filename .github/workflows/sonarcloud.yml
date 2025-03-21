@@ -44,13 +44,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install yq
-        run: |
-          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
-          sudo chmod +x /usr/local/bin/yq
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Fetch SonarCloud Issues
-        id: fetch_issues
         run: |
           PR_KEY=${{ github.event.pull_request.number }}
           PROJECT_KEY=SavleenKaur04_SonarDemo2
@@ -70,60 +67,18 @@ jobs:
 
           echo "✅ SonarCloud issues saved successfully."
 
-      - name: Post SonarCloud Issues as PR Comments (Using yq & jq)
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: pip install requests
+
+      - name: Post SonarCloud Issues as PR Comments (Python)
         env:
-          INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
-        run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          REPO=${{ github.repository }}
-
-          if [ ! -s sonar_issues.json ]; then
-            echo "❌ No issues found. Exiting."
-            exit 0
-          fi
-
-          echo "🔍 Checking SonarCloud issues..."
-          cat sonar_issues.json  # ✅ Debug JSON contents
-
-          # ✅ Check if JSON contains issues before processing
-          ISSUE_COUNT=$(yq e '.issues | length' sonar_issues.json)
-          if [[ "$ISSUE_COUNT" -eq 0 ]]; then
-            echo "✅ No SonarCloud issues found."
-            exit 0
-          fi
-
-          # ✅ Extract issues properly
-          yq e '.issues[] | @json' sonar_issues.json | while read -r issue; do
-            FILE=$(echo "$issue" | jq -r '.component' | cut -d ':' -f2-)
-            LINE=$(echo "$issue" | jq -r '.line // 0')  # Default to 0 if missing
-            MESSAGE=$(echo "$issue" | jq -r '.message')
-
-            echo "✅ Extracted Issue: File=$FILE, Line=$LINE, Message=$MESSAGE"
-
-            if [[ -z "$FILE" || "$FILE" == "null" ]]; then
-              echo "❌ Skipping issue due to missing file"
-              continue
-            fi
-
-            if [[ "$LINE" -eq 0 || "$LINE" == "null" ]]; then
-              echo "❌ Skipping inline comment due to missing line number"
-              continue
-            fi
-
-            echo "📌 Posting inline comment for $FILE at line $LINE..."
-
-            PAYLOAD=$(jq -n \
-              --arg path "$FILE" \
-              --argjson line "$LINE" \
-              --arg body "🔍 **SonarCloud Issue:** $MESSAGE" \
-              '{path: $path, line: $line, body: $body}')
-
-            COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
-
-            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $INLINE_COMMENT" \
-              -H "Content-Type: application/json" -d "$PAYLOAD" "$COMMENT_URL")
-
-            echo "🔍 GitHub API Response Code: $RESPONSE"
-            echo "🔍 GitHub API Response Body:"
-            cat response.json  # ✅ Debug GitHub API response
-          done
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python post_comments.py
