@@ -10,9 +10,9 @@ with open("sonar_issues.json") as f:
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # GitHub token for authentication
 REPO = os.getenv("GITHUB_REPO")  # Format: "owner/repo"
 PR_NUMBER = os.getenv("PR_NUMBER")  # PR number
-PR_COMMIT_SHA = os.getenv("GITHUB_SHA")
+PR_COMMIT_SHA = os.getenv("PR_HASH")
 
-print(GITHUB_TOKEN,REPO,PR_NUMBER,PR_COMMIT_SHA)
+print({GITHUB_TOKEN,REPO,PR_NUMBER,PR_COMMIT_SHA})
 
 headers = {
     "Authorization": f"token {GITHUB_TOKEN}",
