@@ -34,7 +34,7 @@ jobs:
           restore-keys: maven-
 
       - name: Run SonarCloud Analysis
-        run: mvn sonar:sonar -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}" -D"sonar.qualitygate.wait=true" || true
+        run: mvn sonar:sonar -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}" -D"sonar.qualitygate.wait||true"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -44,8 +44,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Fetch SonarCloud Issues
-        id: fetch_issues
         run: |
           PR_KEY=${{ github.event.pull_request.number }}
           PROJECT_KEY=SavleenKaur04_SonarDemo2
@@ -54,85 +56,29 @@ jobs:
 
           echo "Fetching SonarCloud issues from: $API_URL"
 
-          # ✅ Fetch response and store in file
-          curl -s -u "${SONAR_TOKEN}:" "${API_URL}" | tee sonar_issues.json
+          # ✅ Save API response correctly
+          curl -s -u ${SONAR_TOKEN}: "${API_URL}" -o sonar_issues.json
 
-          # ✅ Print JSON file size
-          echo "File Size: $(stat -c%s sonar_issues.json) bytes"
-
-          # ✅ Ensure JSON is properly written before processing
+          # ✅ Ensure JSON file is not empty
           if [ ! -s sonar_issues.json ]; then
-            echo "❌ The sonar_issues.json file is empty! Exiting."
-            exit 1
-          fi
-
-          # ✅ Remove hidden characters that might break jq
-          tr -cd '\11\12\15\40-\176' < sonar_issues.json > cleaned_sonar_issues.json
-          mv cleaned_sonar_issues.json sonar_issues.json
-
-          # ✅ Print first few lines to check for formatting errors
-          head -n 10 sonar_issues.json
-
-          # ✅ Validate JSON file before parsing
-          if ! jq empty sonar_issues.json 2>/dev/null; then
-            echo "❌ The file sonar_issues.json contains invalid JSON! Exiting."
-            exit 1
-          fi
-
-      - name: Post SonarCloud Issues as PR Comments
-        env:
-          INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
-        run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          REPO=${{ github.repository }}
-          SONAR_ISSUES_FILE="sonar_issues.json"
-
-          echo "🔍 Checking SonarCloud issues..."
-          cat $SONAR_ISSUES_FILE  # ✅ Print file contents for debugging
-
-          # ✅ Ensure file is valid before processing
-          if [ ! -s "$SONAR_ISSUES_FILE" ]; then
             echo "❌ No issues found. Exiting."
             exit 0
           fi
 
-          if ! jq empty "$SONAR_ISSUES_FILE" 2>/dev/null; then
-            echo "❌ JSON parsing failed. Exiting."
-            exit 1
-          fi
+          echo "✅ SonarCloud issues saved successfully."
 
-          # ✅ Handle empty or invalid JSON gracefully
-          ISSUES=$(jq -c '.issues[] | select(.line != null and .component != null)' "$SONAR_ISSUES_FILE" || echo "[]")
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
 
-          for ISSUE in $ISSUES; do
-            FILE=$(echo "$ISSUE" | jq -r '.component' | awk -F ":" '{print $2}')
-            LINE=$(echo "$ISSUE" | jq -r '.line')
-            MESSAGE=$(echo "$ISSUE" | jq -r '.message')
+      - name: Install Dependencies
+        run: pip install requests
 
-            if [[ -z "$FILE" || -z "$LINE" || "$LINE" == "null" ]]; then
-              echo "❌ Skipping issue due to missing file or line number."
-              continue
-            fi
-
-            echo "📌 Posting inline comment for $FILE at line $LINE..."
-
-            PAYLOAD=$(jq -n \
-              --arg commit_id "$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")" \
-              --arg path "$FILE" \
-              --argjson line "$LINE" \
-              --arg body "🔍 **SonarCloud Issue:** $MESSAGE" \
-              '{commit_id: $commit_id, path: $path, line: $line, body: $body}')
-
-            COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
-
-            RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST -H "Authorization: Bearer $INLINE_COMMENT" \
-              -H "Content-Type: application/json" \
-              -d "$PAYLOAD" \
-              "$COMMENT_URL")
-
-            echo "🔍 GitHub API Response Code: $RESPONSE"
-            echo "🔍 GitHub API Response Body:"
-            cat response.json  # ✅ Print GitHub API response for debugging
-          done
-
-          echo "✅ Script completed successfully."
+      - name: Post SonarCloud Issues as PR Comments (Python)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python post_comments.py
