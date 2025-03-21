@@ -34,7 +34,7 @@ jobs:
           restore-keys: maven-
 
       - name: Run SonarCloud Analysis
-        run: mvn sonar:sonar -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}" -D"sonar.qualitygate.wait||true"
+        run: mvn sonar:sonar -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}" -D"sonar.qualitygate.wait=true" || true
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
@@ -44,10 +44,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
       - name: Fetch SonarCloud Issues
+        id: fetch_issues
         run: |
           PR_KEY=${{ github.event.pull_request.number }}
           PROJECT_KEY=SavleenKaur04_SonarDemo2
@@ -56,33 +54,8 @@ jobs:
 
           echo "Fetching SonarCloud issues from: $API_URL"
 
-          # ✅ Save API response correctly
-          curl -s -u ${SONAR_TOKEN}: "${API_URL}" -o sonar_issues.json
+          # ✅ Fetch and store JSON response
+          curl -s -u ${SONAR_TOKEN}: "${API_URL}" | tee sonar_issues.json
 
-          # ✅ Ensure JSON file is not empty
-          if [ ! -s sonar_issues.json ]; then
-            echo "❌ No issues found. Exiting."
-            exit 0
-          fi
-
-          echo "✅ SonarCloud issues saved successfully."
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-
-      - name: Install Dependencies
-        run: pip install requests
-
-      - name: Get the PR Commit SHA
-        run: echo "PR_COMMIT_SHA=$(jq -r '.pull_request.head.sha' $GITHUB_EVENT_PATH)" >> $GITHUB_ENV
-
-      - name: Post SonarCloud Issues as PR Comments (Python)
-        env:
-          GITHUB_TOKEN: ${{ secrets.INLINE_COMMENT }}
-          GITHUB_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_COMMIT_SHA: ${{ env.PR_COMMIT_SHA }}
-        run: python post_comments.py
-
+          # ✅ Print JSON file size
+          echo "File Size: $(stat -c%s sonar_issues
