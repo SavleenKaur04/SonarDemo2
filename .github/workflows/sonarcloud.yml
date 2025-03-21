@@ -1,88 +1,104 @@
-name: SonarCloud PR Analysis & AI PR Reviewer
+name: SonarCloud PR Analysis
 
 on:
   pull_request:
-    branches:
-      - main  # Analyze PRs targeting main
+    types: [opened, synchronize, reopened]
 
-permissions:
-  contents: read
-  pull-requests: write
+permissions:  
+  pull-requests: write  
+  checks: write  
 
 jobs:
-  sonarcloud: 
-    name: Run SonarCloud Analysis
+  sonarcloud:
     runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # ✅ Ensures full Git history for SonarCloud
-
-      - name: Set up JDK
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Cache Maven packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2
-          key: maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: maven-
-
-      - name: Run SonarCloud Analysis
-        run: mvn sonar:sonar -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}" -D"sonar.qualitygate.wait||true"
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-  fetch-sonar-issues:
-    name: Fetch SonarCloud Issues & Post Inline Comments
-    needs: sonarcloud
-    runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Fetch SonarCloud Issues
-        run: |
-          PR_KEY=${{ github.event.pull_request.number }}
-          PROJECT_KEY=SavleenKaur04_SonarDemo2
-          SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}"
-          API_URL="https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT_KEY}&pullRequest=${PR_KEY}"
-
-          echo "Fetching SonarCloud issues from: $API_URL"
-
-          # ✅ Save API response correctly
-          curl -s -u ${SONAR_TOKEN}: "${API_URL}" -o sonar_issues.json
-
-          # ✅ Ensure JSON file is not empty
-          if [ ! -s sonar_issues.json ]; then
-            echo "❌ No issues found. Exiting."
-            exit 0
-          fi
-
-          echo "✅ SonarCloud issues saved successfully."
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          fetch-depth: 0
 
-      - name: Install Dependencies
-        run: pip install requests
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: 17
 
-      - name: Get the PR Commit SHA
-        run: echo "PR_COMMIT_SHA=$(jq -r '.pull_request.head.sha' $GITHUB_EVENT_PATH)" >> $GITHUB_ENV
+      - name: Verify Maven Installation
+        run: mvn -version  
 
-      - name: Post SonarCloud Issues as PR Comments (Python)
+      - name: Build with Maven
+        run: mvn clean verify  
+
+      - name: SonarCloud Scan
+        run: mvn sonar:sonar -D"sonar.host.url=https://sonarcloud.io" \
+                             -D"sonar.organization=savleenkaur04" \
+                             -D"sonar.projectKey=SavleenKaur04_SonarDemo2" \
+                             -D"sonar.pullrequest.branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}" \
+                             -D"sonar.pullrequest.base=main" \
+                             -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}"
         env:
-          GITHUB_TOKEN: ${{ secrets.INLINE_COMMENT }}
-          GITHUB_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_COMMIT_SHA: ${{ env.PR_COMMIT_SHA }}
-        run: python post_comments.py
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+      - name: Fetch SonarCloud Issues and Post Comments
+        run: |
+          PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+          REPO=$(jq --raw-output .repository.full_name "$GITHUB_EVENT_PATH")
+          COMMIT_ID=$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")
+
+          SONAR_API="https://sonarcloud.io/api/issues/search?componentKeys=SavleenKaur04_SonarDemo2&branch=main&resolved=false&ps=100"
+          ISSUES=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$SONAR_API" | jq -c '.issues[]')
+
+          echo "✅ Raw SonarCloud API Response:"
+          echo "$ISSUES" | jq '.'
+
+          echo "Processing issues..."
+          COUNT=0
+          for issue in $ISSUES; do
+            RULE=$(echo "$issue" | jq -r '.rule')
+            MESSAGE=$(echo "$issue" | jq -r '.message')
+            FILE=$(echo "$issue" | jq -r '.component' | sed 's/.*://')
+            LINE=$(echo "$issue" | jq -r '.line')
+
+            if [ -z "$FILE" ] || [ -z "$MESSAGE" ]; then
+              echo "⚠️ Skipping issue due to missing file or message."
+              continue
+            fi
+
+            echo "✅ Issue Found: Rule: $RULE | File: $FILE | Line: $LINE | Message: $MESSAGE"
+
+            if [ "$LINE" == "null" ] || [ -z "$LINE" ]; then
+              echo "⚠️ No line number detected. Posting a general PR comment."
+              PAYLOAD=$(jq -n --arg body "🔍 **SonarCloud Issue:** $MESSAGE\n\n**File:** \`$FILE\`" '{body: $body}')
+              COMMENT_URL="https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments"
+
+              curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
+                -H "Content-Type: application/json" \
+                -d "$PAYLOAD" \
+                "$COMMENT_URL"
+            else
+              PAYLOAD=$(jq -n \
+                --arg commit_id "$COMMIT_ID" \
+                --arg path "$FILE" \
+                --argjson line "$LINE" \
+                --arg body "🔍 **$RULE**: $MESSAGE" \
+                '{commit_id: $commit_id, path: $path, line: $line, body: $body}')
+
+              COMMENT_URL="https://api.github.com/repos/$REPO/pulls/$PR_NUMBER/comments"
+
+              echo "🚀 Posting inline comment to PR at $FILE:$LINE"
+              curl -s -X POST -H "Authorization: Bearer ${{ secrets.INLINE_COMMENT }}" \
+                -H "Content-Type: application/json" \
+                -d "$PAYLOAD" \
+                "$COMMENT_URL"
+            fi
+
+            # Prevent GitHub API rate limits
+            COUNT=$((COUNT+1))
+            if [ $COUNT -eq 5 ]; then
+              echo "⏳ Sleeping for 5 seconds to prevent API rate limits..."
+              sleep 5
+              COUNT=0
+            fi
+          done
+        env:
+          INLINE_COMMENT: ${{ secrets.INLINE_COMMENT }}
