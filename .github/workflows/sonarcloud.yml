@@ -75,10 +75,14 @@ jobs:
       - name: Install Dependencies
         run: pip install requests
 
+      - name: Get the PR Commit SHA
+        run: echo "PR_COMMIT_SHA=$(jq -r '.pull_request.head.sha' $GITHUB_EVENT_PATH)" >> $GITHUB_ENV
+
       - name: Post SonarCloud Issues as PR Comments (Python)
         env:
           GITHUB_TOKEN: ${{ secrets.INLINE_COMMENT }}
           GITHUB_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
-        run: python post_comments.py
+          PR_COMMIT_SHA: ${{ env.PR_COMMIT_SHA }}
+          run: python post_comments.py
+
