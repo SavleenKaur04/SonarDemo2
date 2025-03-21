@@ -7,7 +7,7 @@ with open("sonar_issues.json") as f:
     data = json.load(f)
 
 # GitHub configuration
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # GitHub token for authentication
+GITHUB_TOKEN = os.getenv("INLINE_COMMENT")  # GitHub token for authentication
 REPO = os.getenv("GITHUB_REPO")  # Format: "owner/repo"
 PR_NUMBER = os.getenv("PR_NUMBER")  # PR number
 GITHUB_SHA = os.getenv("GITHUB_SHA")  # Commit SHA for commenting
