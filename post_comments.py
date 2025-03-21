@@ -10,13 +10,15 @@ with open("sonar_issues.json") as f:
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # GitHub token for authentication
 REPO = os.getenv("GITHUB_REPO")  # Format: "owner/repo"
 PR_NUMBER = os.getenv("PR_NUMBER")  # PR number
-PR_COMMIT_SHA = os.getenv("GITHUB_SHA")  # Commit SHA for commenting
+PR_COMMIT_SHA = os.getenv("GITHUB_SHA")
+
+print(GITHUB_TOKEN,REPO,PR_NUMBER,PR_COMMIT_SHA)
 
 headers = {
     "Authorization": f"token {GITHUB_TOKEN}",
     "Accept": "application/vnd.github.v3+json"
 }
-
+print(headers)
 # Check if there are any issues
 if "issues" not in data or not data["issues"]:
     print("✅ No SonarCloud issues found.")
@@ -46,8 +48,9 @@ for issue in data["issues"]:
         "side": "RIGHT",
         "line": line
     }
-
+    print(comment_body)
     comment_url = f"https://api.github.com/repos/{REPO}/pulls/{PR_NUMBER}/comments"
+    print(comment_url)
     response = requests.post(comment_url, headers=headers, json=comment_body)
 
     if response.status_code == 201:
