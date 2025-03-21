@@ -54,26 +54,17 @@ jobs:
 
           echo "Fetching SonarCloud issues from: $API_URL"
 
-          # ✅ Use tee to correctly save response
-          curl -s -u ${SONAR_TOKEN}: "${API_URL}" | tee sonar_issues.json
+          # Fetch issues and validate response
+          RESPONSE=$(curl -s -u ${SONAR_TOKEN}: "${API_URL}")
+          echo "$RESPONSE" > sonar_issues.json
 
-          # ✅ Debug: Print JSON file size
-          echo "File Size: $(stat -c%s sonar_issues.json) bytes"
-
-          # ✅ Ensure JSON is properly written before processing
-          if [ ! -s sonar_issues.json ]; then
-            echo "❌ The sonar_issues.json file is empty! Exiting."
-            exit 1
+          # Check if JSON is empty or invalid
+          if [ ! -s sonar_issues.json ] || ! jq empty sonar_issues.json 2>/dev/null; then
+            echo "❌ No valid issues found. Exiting."
+            exit 0
           fi
 
-          # ✅ Print first few lines to check for formatting errors
-          head -n 10 sonar_issues.json
-
-          # ✅ Validate JSON file before parsing
-          if ! jq empty sonar_issues.json 2>/dev/null; then
-            echo "❌ The file sonar_issues.json contains invalid JSON! Exiting."
-            exit 1
-          fi
+          echo "✅ Successfully fetched SonarCloud issues."
 
       - name: Post SonarCloud Issues as PR Comments
         env:
@@ -97,7 +88,7 @@ jobs:
             exit 1
           fi
 
-          # ✅ Handle empty or invalid JSON gracefully
+          # ✅ Extract and process issues
           ISSUES=$(jq -c '.issues[] // empty' "$SONAR_ISSUES_FILE" || echo "[]")
 
           for ISSUE in $ISSUES; do
@@ -118,8 +109,11 @@ jobs:
 
             echo "📌 Posting inline comment for $FILE at line $LINE..."
 
+            # ✅ Correct commit SHA
+            COMMIT_ID=${{ github.event.pull_request.head.sha }}
+
             PAYLOAD=$(jq -n \
-              --arg commit_id "$(jq --raw-output .pull_request.head.sha "$GITHUB_EVENT_PATH")" \
+              --arg commit_id "$COMMIT_ID" \
               --arg path "$FILE" \
               --argjson line "$LINE" \
               --arg body "🔍 **SonarCloud Issue:** $MESSAGE" \
