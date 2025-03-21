@@ -52,6 +52,7 @@ for issue in data["issues"]:
     comment_url = f"https://api.github.com/repos/{REPO}/pulls/{PR_NUMBER}/comments"
     print(comment_url)
     response = requests.post(comment_url, headers=headers, json=comment_body)
+    print(response.json())
 
     if response.status_code == 201:
         print(f"✅ Comment posted on {file_path}:{line}")
