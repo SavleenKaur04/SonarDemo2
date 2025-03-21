@@ -81,5 +81,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.INLINE_COMMENT }}
           GITHUB_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_SHA: ${{ github.sha }}
         run: python post_comments.py
