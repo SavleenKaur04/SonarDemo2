@@ -7,10 +7,10 @@ with open("sonar_issues.json") as f:
     data = json.load(f)
 
 # GitHub configuration
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # GitHub token for authentication
+GITHUB_TOKEN = os.getenv("INLINE_COMMENT")  # GitHub token for authentication
 REPO = os.getenv("GITHUB_REPO")  # Format: "owner/repo"
 PR_NUMBER = os.getenv("PR_NUMBER")  # PR number
-GITHUB_SHA = os.getenv("GITHUB_SHA")  # Commit SHA for commenting
+PR_COMMIT_SHA = os.getenv("PR_COMMIT_SHA")  # Commit SHA for commenting
 
 headers = {
     "Authorization": f"token {GITHUB_TOKEN}",
@@ -41,7 +41,7 @@ for issue in data["issues"]:
 
     comment_body = {
         "body": f"🔍 **SonarCloud Issue:** {message}",
-        "commit_id": GITHUB_SHA,
+        "commit_id": PR_COMMIT_SHA,
         "path": file_path,
         "side": "RIGHT",
         "line": line
