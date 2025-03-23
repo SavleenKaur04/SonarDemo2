@@ -4,6 +4,6 @@ public class Main {
     public static void main(String[] args) { 
         System.out.println("Hello SonarCloud!");
 
-       int 678;
+       int v=678;
     }
 }
