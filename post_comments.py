@@ -3,7 +3,7 @@ import requests
 import os
 
 # Load SonarCloud issues
-with open("sonar_issues.json") as f:
+with open("sonar_issues.json") as f: 
     data = json.load(f)
 
 # GitHub configuration
